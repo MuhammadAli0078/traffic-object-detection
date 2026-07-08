@@ -1,0 +1,13 @@
+train: train/images
+val: valid/images
+test: test/images
+
+nc: 5
+names: ['Bike', 'Bus', 'Car', 'Motobike', 'Truck']
+
+roboflow:
+  workspace: guenkainto
+  project: yolov8-traffic
+  version: 1
+  license: Public Domain
+  url: https://universe.roboflow.com/guenkainto/yolov8-traffic/dataset/1

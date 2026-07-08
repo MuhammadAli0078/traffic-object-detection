@@ -1,0 +1,8 @@
+.venv/
+static/results/*
+!static/results/.gitkeep
+__pycache__/
+*.pyc
+flask.log
+.claude/
+~$*.docx
