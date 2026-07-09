@@ -100,72 +100,104 @@ function updateDropzoneLabel() {
     }
 }
 
-// ---------------- webcam ----------------
+// ---------------- webcam (live loop) ----------------
+// "Live" here means: capture one photo from the camera, send it to the
+// server for detection, show the returned annotated photo, then repeat.
+// It is not true video streaming, but on a normal computer detection
+// takes a few hundred milliseconds per photo, so repeating this in a
+// loop looks close to live and is much simpler to build and debug.
 const webcamVideo = document.getElementById("webcam-video");
+const webcamLiveImage = document.getElementById("webcam-live-image");
 const webcamPlaceholder = document.getElementById("webcam-placeholder");
 const webcamCanvas = document.getElementById("webcam-canvas");
-const webcamStart = document.getElementById("webcam-start");
-const webcamStop = document.getElementById("webcam-stop");
-const webcamCapture = document.getElementById("webcam-capture");
-const webcamSpinner = document.getElementById("webcam-spinner");
-const webcamBtnLabel = document.getElementById("webcam-btn-label");
+const webcamToggle = document.getElementById("webcam-toggle");
+const webcamBadges = document.getElementById("webcam-badges");
 
 let webcamStream = null;
+let webcamRunning = false;
 
-webcamStart.addEventListener("click", async () => {
+webcamToggle.addEventListener("click", () => {
+    if (webcamRunning) {
+        stopWebcam();
+    } else {
+        startWebcam();
+    }
+});
+
+async function startWebcam() {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         errorEl.textContent = "Your browser does not support webcam access, or this page isn't served over HTTPS/localhost.";
         errorEl.classList.remove("d-none");
         return;
     }
+
     try {
-        webcamStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-        webcamVideo.srcObject = webcamStream;
-        webcamVideo.classList.remove("d-none");
-        webcamPlaceholder.classList.add("d-none");
-        webcamStart.classList.add("d-none");
-        webcamStop.classList.remove("d-none");
-        webcamCapture.disabled = false;
+        webcamStream = await navigator.mediaDevices.getUserMedia({ video: true });
     } catch (err) {
         errorEl.textContent = "Could not access the camera: " + err.message;
         errorEl.classList.remove("d-none");
+        return;
     }
-});
 
-webcamStop.addEventListener("click", stopWebcam);
+    webcamVideo.srcObject = webcamStream;
+    webcamVideo.classList.remove("d-none");
+    webcamPlaceholder.classList.add("d-none");
+    webcamToggle.innerHTML = '<i class="bi bi-stop-circle-fill me-1"></i>Stop live detection';
+    webcamRunning = true;
+    runWebcamLoop();
+}
 
 function stopWebcam() {
+    webcamRunning = false;
     if (webcamStream) {
         webcamStream.getTracks().forEach((track) => track.stop());
         webcamStream = null;
     }
     webcamVideo.classList.add("d-none");
+    webcamLiveImage.classList.add("d-none");
     webcamPlaceholder.classList.remove("d-none");
-    webcamStart.classList.remove("d-none");
-    webcamStop.classList.add("d-none");
-    webcamCapture.disabled = true;
+    webcamToggle.innerHTML = '<i class="bi bi-camera-video-fill me-1"></i>Start live detection';
 }
 
-webcamCapture.addEventListener("click", async () => {
+async function runWebcamLoop() {
+    while (webcamRunning) {
+        const blob = await captureWebcamFrame();
+        if (blob && webcamRunning) {
+            await detectWebcamFrame(blob);
+        }
+        await sleep(300);
+    }
+}
+
+function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function captureWebcamFrame() {
+    if (!webcamVideo.videoWidth) return null;
     webcamCanvas.width = webcamVideo.videoWidth;
     webcamCanvas.height = webcamVideo.videoHeight;
     webcamCanvas.getContext("2d").drawImage(webcamVideo, 0, 0);
+    return new Promise((resolve) => webcamCanvas.toBlob(resolve, "image/jpeg", 0.85));
+}
 
-    const blob = await new Promise((resolve) => webcamCanvas.toBlob(resolve, "image/jpeg", 0.9));
-    if (!blob) return;
+async function detectWebcamFrame(blob) {
+    const formData = new FormData();
+    formData.append("file", blob, "webcam.jpg");
 
-    setWebcamLoading(true);
     try {
-        await runDetection(blob, `webcam-${Date.now()}.jpg`, "Webcam");
-    } finally {
-        setWebcamLoading(false);
-    }
-});
+        const response = await fetch("/api/detect", { method: "POST", body: formData });
+        const data = await response.json();
+        if (!response.ok || !webcamRunning) return;
 
-function setWebcamLoading(isLoading) {
-    webcamCapture.disabled = isLoading || !webcamStream;
-    webcamSpinner.classList.toggle("d-none", !isLoading);
-    webcamBtnLabel.classList.toggle("d-none", isLoading);
+        webcamLiveImage.src = data.result_url + "?t=" + Date.now();
+        webcamLiveImage.classList.remove("d-none");
+        webcamVideo.classList.add("d-none");
+
+        renderBadges(webcamBadges, data.stats, data.total);
+    } catch (err) {
+        // A single failed frame just gets skipped; the loop tries again next tick.
+    }
 }
 
 // ---------------- detection ----------------
@@ -232,24 +264,30 @@ function showResult(data) {
         resultVideo.classList.add("d-none");
     }
 
-    detectBadges.innerHTML = "";
-    data.stats.forEach((row) => {
-        detectBadges.innerHTML += `
+    renderBadges(detectBadges, data.stats, data.total);
+    resultEl.classList.remove("d-none");
+}
+
+function renderBadges(container, stats, total) {
+    container.innerHTML = "";
+
+    if (!stats.length) {
+        container.innerHTML = `<div class="col-auto"><span class="class-badge bg-secondary">No objects detected</span></div>`;
+    }
+
+    stats.forEach((row) => {
+        container.innerHTML += `
             <div class="col-auto">
                 <span class="class-badge" style="background:${classColor(row.name)}">
                     <span class="class-dot"></span>${row.name}: ${row.count}
                 </span>
             </div>`;
     });
-    if (!data.stats.length) {
-        detectBadges.innerHTML = `<div class="col-auto"><span class="class-badge bg-secondary">No objects detected</span></div>`;
-    }
-    detectBadges.innerHTML += `
-        <div class="col-auto">
-            <span class="class-badge bg-dark">Total: ${data.total}</span>
-        </div>`;
 
-    resultEl.classList.remove("d-none");
+    container.innerHTML += `
+        <div class="col-auto">
+            <span class="class-badge bg-dark">Total: ${total}</span>
+        </div>`;
 }
 
 // ---------------- detection history ----------------
