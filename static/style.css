@@ -5,6 +5,7 @@
     --text-secondary: #52514e;
     --text-muted: #898781;
     --gridline: #e1e0d9;
+    --border: rgba(11, 11, 11, 0.10);
 
     /* categorical: Bike, Bus, Car, Motobike, Truck */
     --class-bike: #2a78d6;
@@ -22,6 +23,7 @@
         --text-secondary: #c3c2b7;
         --text-muted: #898781;
         --gridline: #2c2c2a;
+        --border: rgba(255, 255, 255, 0.10);
 
         --class-bike: #3987e5;
         --class-bus: #199e70;
@@ -31,28 +33,157 @@
     }
 }
 
+:root[data-theme="light"] {
+    --surface-1: #fcfcfb;
+    --page: #f4f5f7;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted: #898781;
+    --gridline: #e1e0d9;
+    --border: rgba(11, 11, 11, 0.10);
+    --class-bike: #2a78d6;
+    --class-bus: #1baf7a;
+    --class-car: #eda100;
+    --class-motobike: #008300;
+    --class-truck: #e34948;
+}
+
+:root[data-theme="dark"] {
+    --surface-1: #1a1a19;
+    --page: #0d0d0d;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted: #898781;
+    --gridline: #2c2c2a;
+    --border: rgba(255, 255, 255, 0.10);
+    --class-bike: #3987e5;
+    --class-bus: #199e70;
+    --class-car: #c98500;
+    --class-motobike: #008300;
+    --class-truck: #e66767;
+}
+
+* {
+    transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+html {
+    --bs-body-color: var(--text-primary);
+    --bs-body-bg: var(--page);
+    --bs-border-color: var(--gridline);
+    --bs-secondary-color: var(--text-secondary);
+    --bs-heading-color: var(--text-primary);
+    --bs-emphasis-color: var(--text-primary);
+    --bs-table-bg: transparent;
+    --bs-table-color: var(--text-primary);
+    --bs-table-border-color: var(--gridline);
+}
+
 body {
     background-color: var(--page);
     color: var(--text-primary);
     font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
+h1, h2, h3, h4, h5, h6, .card-title, .card-text, label, .dropzone-content, .fw-semibold {
+    color: var(--text-primary);
+}
+
 .card {
     background-color: var(--surface-1);
+    color: var(--text-primary);
+    border-radius: 1rem;
+}
+
+.card:hover {
+    box-shadow: 0 0.5rem 1.5rem rgba(0, 0, 0, 0.08) !important;
 }
 
 .text-muted {
     color: var(--text-muted) !important;
 }
 
+/* ---------- theme toggle ---------- */
+.theme-toggle {
+    position: fixed;
+    top: 1rem;
+    right: 1rem;
+    z-index: 1050;
+    width: 2.75rem;
+    height: 2.75rem;
+    border-radius: 50%;
+    border: none;
+    background: rgba(255, 255, 255, 0.18);
+    color: #fff;
+    backdrop-filter: blur(6px);
+    font-size: 1.1rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+
+.theme-toggle:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+/* ---------- hero ---------- */
 .hero {
+    position: relative;
+    overflow: hidden;
     background: linear-gradient(135deg, var(--class-bike), #1c5cab);
+}
+
+.hero-pattern {
+    position: absolute;
+    inset: 0;
+    background-image: radial-gradient(circle, rgba(255, 255, 255, 0.14) 1.5px, transparent 1.5px);
+    background-size: 22px 22px;
+    opacity: 0.6;
+}
+
+.hero-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 4rem;
+    height: 4rem;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.15);
+    font-size: 1.75rem;
 }
 
 .content-wrap {
     margin-top: -2.5rem;
 }
 
+/* ---------- animations ---------- */
+@keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.fade-in-up {
+    animation: fadeInUp 0.4s ease both;
+}
+
+/* ---------- dropzone ---------- */
+.dropzone {
+    display: block;
+    border: 2px dashed var(--gridline);
+    border-radius: 0.75rem;
+    padding: 2rem 1rem;
+    text-align: center;
+    cursor: pointer;
+    background-color: var(--page);
+}
+
+.dropzone:hover, .dropzone.dragover {
+    border-color: var(--class-bike);
+    background-color: color-mix(in srgb, var(--class-bike) 6%, var(--page));
+}
+
+/* ---------- result media ---------- */
 #result-image, #result-video {
     max-height: 480px;
     object-fit: contain;
@@ -60,11 +191,17 @@ body {
     margin: 0 auto;
 }
 
+/* ---------- stat tiles ---------- */
 .stat-tile {
     border-radius: 0.75rem;
     padding: 1rem;
     text-align: center;
     color: #fff;
+    transition: transform 0.15s ease;
+}
+
+.stat-tile:hover {
+    transform: translateY(-3px);
 }
 
 .stat-tile .stat-value {
@@ -79,6 +216,7 @@ body {
     opacity: 0.85;
 }
 
+/* ---------- badges ---------- */
 .class-badge {
     display: inline-flex;
     align-items: center;
@@ -96,8 +234,21 @@ body {
     background: currentColor;
 }
 
+/* ---------- figures ---------- */
 #figures-row img {
     width: 100%;
     border: 1px solid var(--gridline);
     border-radius: 0.5rem;
+    cursor: zoom-in;
+}
+
+#figures-row img:hover {
+    outline: 2px solid var(--class-bike);
+}
+
+#figures-row figcaption {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    margin-top: 0.35rem;
+    text-align: center;
 }

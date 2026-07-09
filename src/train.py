@@ -7,14 +7,15 @@ def main():
     # Train
     model.train(
         data="dataset/data.yaml",
-        epochs=10,
+        epochs=40,
         imgsz=416,
         batch=4,
         device="cpu",
         project="runs",
         name="traffic_detection",
         workers=0,
-        verbose=True
+        verbose=True,
+        resume=True
     )
 
 if __name__ == "__main__":

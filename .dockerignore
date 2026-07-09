@@ -1,0 +1,7 @@
+.venv/
+.git/
+.claude/
+static/results/*
+!static/results/.gitkeep
+__pycache__/
+*.pyc
