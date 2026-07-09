@@ -51,6 +51,19 @@ themeToggle.addEventListener("click", () => {
     renderChart(lastDatasetStats);
 });
 
+// ---------------- mode tabs (upload / webcam) ----------------
+const tabButtons = document.querySelectorAll("#mode-tabs .nav-link");
+const modePanes = { upload: document.getElementById("upload-form"), webcam: document.getElementById("mode-webcam") };
+
+tabButtons.forEach((btn) => {
+    btn.addEventListener("click", () => {
+        tabButtons.forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        Object.entries(modePanes).forEach(([mode, pane]) => pane.classList.toggle("d-none", mode !== btn.dataset.mode));
+        if (btn.dataset.mode !== "webcam") stopWebcam();
+    });
+});
+
 // ---------------- dropzone ----------------
 fileInput.addEventListener("change", updateDropzoneLabel);
 
@@ -87,12 +100,77 @@ function updateDropzoneLabel() {
     }
 }
 
+// ---------------- webcam ----------------
+const webcamVideo = document.getElementById("webcam-video");
+const webcamPlaceholder = document.getElementById("webcam-placeholder");
+const webcamCanvas = document.getElementById("webcam-canvas");
+const webcamStart = document.getElementById("webcam-start");
+const webcamStop = document.getElementById("webcam-stop");
+const webcamCapture = document.getElementById("webcam-capture");
+const webcamSpinner = document.getElementById("webcam-spinner");
+const webcamBtnLabel = document.getElementById("webcam-btn-label");
+
+let webcamStream = null;
+
+webcamStart.addEventListener("click", async () => {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        errorEl.textContent = "Your browser does not support webcam access, or this page isn't served over HTTPS/localhost.";
+        errorEl.classList.remove("d-none");
+        return;
+    }
+    try {
+        webcamStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+        webcamVideo.srcObject = webcamStream;
+        webcamVideo.classList.remove("d-none");
+        webcamPlaceholder.classList.add("d-none");
+        webcamStart.classList.add("d-none");
+        webcamStop.classList.remove("d-none");
+        webcamCapture.disabled = false;
+    } catch (err) {
+        errorEl.textContent = "Could not access the camera: " + err.message;
+        errorEl.classList.remove("d-none");
+    }
+});
+
+webcamStop.addEventListener("click", stopWebcam);
+
+function stopWebcam() {
+    if (webcamStream) {
+        webcamStream.getTracks().forEach((track) => track.stop());
+        webcamStream = null;
+    }
+    webcamVideo.classList.add("d-none");
+    webcamPlaceholder.classList.remove("d-none");
+    webcamStart.classList.remove("d-none");
+    webcamStop.classList.add("d-none");
+    webcamCapture.disabled = true;
+}
+
+webcamCapture.addEventListener("click", async () => {
+    webcamCanvas.width = webcamVideo.videoWidth;
+    webcamCanvas.height = webcamVideo.videoHeight;
+    webcamCanvas.getContext("2d").drawImage(webcamVideo, 0, 0);
+
+    const blob = await new Promise((resolve) => webcamCanvas.toBlob(resolve, "image/jpeg", 0.9));
+    if (!blob) return;
+
+    setWebcamLoading(true);
+    try {
+        await runDetection(blob, `webcam-${Date.now()}.jpg`, "Webcam");
+    } finally {
+        setWebcamLoading(false);
+    }
+});
+
+function setWebcamLoading(isLoading) {
+    webcamCapture.disabled = isLoading || !webcamStream;
+    webcamSpinner.classList.toggle("d-none", !isLoading);
+    webcamBtnLabel.classList.toggle("d-none", isLoading);
+}
+
 // ---------------- detection ----------------
 form.addEventListener("submit", async (event) => {
     event.preventDefault();
-
-    errorEl.classList.add("d-none");
-    resultEl.classList.add("d-none");
 
     if (!fileInput.files.length) {
         errorEl.textContent = "Please choose a file first.";
@@ -100,28 +178,9 @@ form.addEventListener("submit", async (event) => {
         return;
     }
 
-    const formData = new FormData();
-    formData.append("file", fileInput.files[0]);
-
     setLoading(true);
-
     try {
-        const response = await fetch("/api/detect", {
-            method: "POST",
-            body: formData,
-        });
-        const data = await response.json();
-
-        if (!response.ok) {
-            errorEl.textContent = data.error || "Something went wrong.";
-            errorEl.classList.remove("d-none");
-            return;
-        }
-
-        showResult(data);
-    } catch (err) {
-        errorEl.textContent = "Could not reach the server.";
-        errorEl.classList.remove("d-none");
+        await runDetection(fileInput.files[0], fileInput.files[0].name, "Upload");
     } finally {
         setLoading(false);
     }
@@ -131,6 +190,31 @@ function setLoading(isLoading) {
     detectBtn.disabled = isLoading;
     spinner.classList.toggle("d-none", !isLoading);
     btnLabel.classList.toggle("d-none", isLoading);
+}
+
+async function runDetection(fileOrBlob, filename, sourceLabel) {
+    errorEl.classList.add("d-none");
+    resultEl.classList.add("d-none");
+
+    const formData = new FormData();
+    formData.append("file", fileOrBlob, filename);
+
+    try {
+        const response = await fetch("/api/detect", { method: "POST", body: formData });
+        const data = await response.json();
+
+        if (!response.ok) {
+            errorEl.textContent = data.error || "Something went wrong.";
+            errorEl.classList.remove("d-none");
+            return;
+        }
+
+        showResult(data);
+        addHistoryEntry(sourceLabel, data);
+    } catch (err) {
+        errorEl.textContent = "Could not reach the server.";
+        errorEl.classList.remove("d-none");
+    }
 }
 
 function showResult(data) {
@@ -167,6 +251,68 @@ function showResult(data) {
 
     resultEl.classList.remove("d-none");
 }
+
+// ---------------- detection history ----------------
+const historyTableBody = document.querySelector("#history-table tbody");
+const historyEmptyRow = document.getElementById("history-empty-row");
+const historyTotalsEl = document.getElementById("history-totals");
+const historyClearBtn = document.getElementById("history-clear");
+
+let history = [];
+
+function addHistoryEntry(sourceLabel, data) {
+    history.unshift({ time: new Date(), source: sourceLabel, stats: data.stats, total: data.total });
+    renderHistory();
+}
+
+function renderHistory() {
+    historyTableBody.innerHTML = "";
+
+    if (!history.length) {
+        historyTableBody.appendChild(historyEmptyRow);
+        historyTotalsEl.innerHTML = "";
+        return;
+    }
+
+    history.forEach((entry) => {
+        const chips = entry.stats.length
+            ? entry.stats.map((s) => `<span class="history-chip" style="background:${classColor(s.name)}">${s.name}: ${s.count}</span>`).join("")
+            : `<span class="history-chip bg-secondary">None</span>`;
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+            <td class="text-muted">${entry.time.toLocaleTimeString()}</td>
+            <td>${entry.source}</td>
+            <td>${chips}</td>
+            <td class="text-end fw-semibold">${entry.total}</td>`;
+        historyTableBody.appendChild(tr);
+    });
+
+    const grandTotals = {};
+    let grandTotal = 0;
+    history.forEach((entry) => {
+        entry.stats.forEach((s) => {
+            grandTotals[s.name] = (grandTotals[s.name] || 0) + s.count;
+            grandTotal += s.count;
+        });
+    });
+
+    historyTotalsEl.innerHTML = `
+        <div class="col-auto"><span class="class-badge bg-dark">Detections run: ${history.length}</span></div>
+        <div class="col-auto"><span class="class-badge bg-dark">Objects counted: ${grandTotal}</span></div>`;
+    Object.entries(grandTotals)
+        .sort((a, b) => b[1] - a[1])
+        .forEach(([name, count]) => {
+            historyTotalsEl.innerHTML += `
+                <div class="col-auto">
+                    <span class="class-badge" style="background:${classColor(name)}">${name}: ${count}</span>
+                </div>`;
+        });
+}
+
+historyClearBtn.addEventListener("click", () => {
+    history = [];
+    renderHistory();
+});
 
 // ---------------- dataset stats ----------------
 const SPLIT_COLORS = { train: "--class-bike", valid: "--class-bus", test: "--class-car" };

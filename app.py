@@ -1,10 +1,12 @@
 import os
+import uuid
 from pathlib import Path
 from collections import Counter
 
 import cv2
 from flask import Flask, jsonify, request, send_from_directory
 from ultralytics import YOLO
+from werkzeug.utils import secure_filename
 
 MODEL_PATH = "runs/detect/runs/traffic_detection/weights/best.pt"
 RESULTS_DIR = Path("static/results")
@@ -95,7 +97,12 @@ def detect():
     if uploaded_file is None or uploaded_file.filename == "":
         return jsonify({"error": "Please choose a file first."}), 400
 
-    upload_path = RESULTS_DIR / uploaded_file.filename
+    safe_name = secure_filename(uploaded_file.filename)
+    if not safe_name:
+        return jsonify({"error": "Invalid file name."}), 400
+
+    unique_name = f"{uuid.uuid4().hex[:8]}_{safe_name}"
+    upload_path = RESULTS_DIR / unique_name
     uploaded_file.save(upload_path)
 
     is_video = upload_path.suffix.lower() in VIDEO_EXTENSIONS
