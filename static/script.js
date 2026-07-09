@@ -51,19 +51,6 @@ themeToggle.addEventListener("click", () => {
     renderChart(lastDatasetStats);
 });
 
-// ---------------- mode tabs (upload / webcam) ----------------
-const tabButtons = document.querySelectorAll("#mode-tabs .nav-link");
-const modePanes = { upload: document.getElementById("upload-form"), webcam: document.getElementById("mode-webcam") };
-
-tabButtons.forEach((btn) => {
-    btn.addEventListener("click", () => {
-        tabButtons.forEach((b) => b.classList.remove("active"));
-        btn.classList.add("active");
-        Object.entries(modePanes).forEach(([mode, pane]) => pane.classList.toggle("d-none", mode !== btn.dataset.mode));
-        if (btn.dataset.mode !== "webcam") stopWebcam();
-    });
-});
-
 // ---------------- dropzone ----------------
 fileInput.addEventListener("change", updateDropzoneLabel);
 
@@ -97,106 +84,6 @@ function updateDropzoneLabel() {
     } else {
         dropzoneEmpty.classList.remove("d-none");
         dropzoneFilled.classList.add("d-none");
-    }
-}
-
-// ---------------- webcam (live loop) ----------------
-// "Live" here means: capture one photo from the camera, send it to the
-// server for detection, show the returned annotated photo, then repeat.
-// It is not true video streaming, but on a normal computer detection
-// takes a few hundred milliseconds per photo, so repeating this in a
-// loop looks close to live and is much simpler to build and debug.
-const webcamVideo = document.getElementById("webcam-video");
-const webcamLiveImage = document.getElementById("webcam-live-image");
-const webcamPlaceholder = document.getElementById("webcam-placeholder");
-const webcamCanvas = document.getElementById("webcam-canvas");
-const webcamToggle = document.getElementById("webcam-toggle");
-const webcamBadges = document.getElementById("webcam-badges");
-
-let webcamStream = null;
-let webcamRunning = false;
-
-webcamToggle.addEventListener("click", () => {
-    if (webcamRunning) {
-        stopWebcam();
-    } else {
-        startWebcam();
-    }
-});
-
-async function startWebcam() {
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        errorEl.textContent = "Your browser does not support webcam access, or this page isn't served over HTTPS/localhost.";
-        errorEl.classList.remove("d-none");
-        return;
-    }
-
-    try {
-        webcamStream = await navigator.mediaDevices.getUserMedia({ video: true });
-    } catch (err) {
-        errorEl.textContent = "Could not access the camera: " + err.message;
-        errorEl.classList.remove("d-none");
-        return;
-    }
-
-    webcamVideo.srcObject = webcamStream;
-    webcamVideo.classList.remove("d-none");
-    webcamPlaceholder.classList.add("d-none");
-    webcamToggle.innerHTML = '<i class="bi bi-stop-circle-fill me-1"></i>Stop live detection';
-    webcamRunning = true;
-    runWebcamLoop();
-}
-
-function stopWebcam() {
-    webcamRunning = false;
-    if (webcamStream) {
-        webcamStream.getTracks().forEach((track) => track.stop());
-        webcamStream = null;
-    }
-    webcamVideo.classList.add("d-none");
-    webcamLiveImage.classList.add("d-none");
-    webcamPlaceholder.classList.remove("d-none");
-    webcamToggle.innerHTML = '<i class="bi bi-camera-video-fill me-1"></i>Start live detection';
-}
-
-async function runWebcamLoop() {
-    while (webcamRunning) {
-        const blob = await captureWebcamFrame();
-        if (blob && webcamRunning) {
-            await detectWebcamFrame(blob);
-        }
-        await sleep(300);
-    }
-}
-
-function sleep(ms) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function captureWebcamFrame() {
-    if (!webcamVideo.videoWidth) return null;
-    webcamCanvas.width = webcamVideo.videoWidth;
-    webcamCanvas.height = webcamVideo.videoHeight;
-    webcamCanvas.getContext("2d").drawImage(webcamVideo, 0, 0);
-    return new Promise((resolve) => webcamCanvas.toBlob(resolve, "image/jpeg", 0.85));
-}
-
-async function detectWebcamFrame(blob) {
-    const formData = new FormData();
-    formData.append("file", blob, "webcam.jpg");
-
-    try {
-        const response = await fetch("/api/detect", { method: "POST", body: formData });
-        const data = await response.json();
-        if (!response.ok || !webcamRunning) return;
-
-        webcamLiveImage.src = data.result_url + "?t=" + Date.now();
-        webcamLiveImage.classList.remove("d-none");
-        webcamVideo.classList.add("d-none");
-
-        renderBadges(webcamBadges, data.stats, data.total);
-    } catch (err) {
-        // A single failed frame just gets skipped; the loop tries again next tick.
     }
 }
 
